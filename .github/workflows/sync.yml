@@ -1,6 +1,7 @@
 ---
 # Opens or updates the pull request mcloud-conventions-sync in every repository of sync/targets.yml with a change
-# of the shared files. Needs the secret CONVENTIONS_SYNC_TOKEN (README.md).
+# of the shared files. It acts as the GitHub App of the variable CONVENTIONS_SYNC_APP_ID and the secret
+# CONVENTIONS_SYNC_APP_PRIVATE_KEY, or with the token of the secret CONVENTIONS_SYNC_TOKEN without the App (README.md).
 name: Sync
 
 on:
@@ -25,14 +26,34 @@ jobs:
           python-version: "3.13"
       - name: Install PyYAML
         run: pip install -r tests/requirements-lint.txt
+      # a token of the App installation for an hour, for the repositories the App is installed on
+      - name: Token of the GitHub App
+        id: app
+        if: ${{ vars.CONVENTIONS_SYNC_APP_ID != '' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.CONVENTIONS_SYNC_APP_ID }}
+          private-key: ${{ secrets.CONVENTIONS_SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Sync the repositories
         env:
-          GH_TOKEN: ${{ secrets.CONVENTIONS_SYNC_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.CONVENTIONS_SYNC_TOKEN }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
           if [[ -z "$GH_TOKEN" ]]; then
-            echo "::error::the secret CONVENTIONS_SYNC_TOKEN is missing, see README.md"
+            echo "::error::no GitHub App (CONVENTIONS_SYNC_APP_ID) and no CONVENTIONS_SYNC_TOKEN, see README.md"
             exit 1
           fi
-          git config --global user.name "mcloud-conventions sync"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # the commits of the sync are made by the App when there is one
+          if [[ -n "$APP_SLUG" ]]; then
+            name="${APP_SLUG}[bot]"
+            email="$(gh api "/users/${name}" --jq .id)+${name}@users.noreply.github.com"
+          else
+            name="mcloud-conventions sync"
+            email="41898282+github-actions[bot]@users.noreply.github.com"
+          fi
+          git config --global user.name "$name"
+          git config --global user.email "$email"
           python3 sync/sync.py --push
