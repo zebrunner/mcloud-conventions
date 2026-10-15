@@ -1,0 +1,42 @@
+---
+# The repositories that get the shared files of this repository, see README.md.
+# files: copied as they are (`source: destination` when the path differs); blocks: the part between the markers
+# '# >>> mcloud-conventions' and '# <<< mcloud-conventions' of the file, the rest of it is the project part.
+branch: develop
+
+groups:
+  # every repository
+  all:
+    files:
+      - CONVENTIONS.md
+      - LICENSE
+      - .shellcheckrc
+      - .pymarkdown
+      - tests/lib.sh
+      - tests/lint.sh
+    blocks:
+      - .editorconfig
+      - .gitignore
+      - tests/requirements-lint.txt
+  # the docker images of shell scripts: the debug mode and the logger with their tests
+  shell-image:
+    files:
+      - shared/util/debug.sh: util/debug.sh
+      - shared/util/logger.sh: util/logger.sh
+      - tests/debug_test.sh
+      - tests/logger_test.sh
+
+repos:
+  zebrunner/appium:
+    groups: [all, shell-image]
+    # the scripts of the image are in files/
+    paths:
+      util/: files/util/
+  zebrunner/mcloud-android-connector:
+    groups: [all, shell-image]
+  zebrunner/mcloud-ios-connector:
+    groups: [all, shell-image]
+  zebrunner/mcloud-grid:
+    groups: [all]
+  zebrunner/mcloud-agent:
+    groups: [all]

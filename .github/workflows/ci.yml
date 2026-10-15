@@ -1,0 +1,58 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+# a new push to a pull request cancels its outdated run, runs of the branches themselves are kept
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # the reusable lint workflow of the repositories, in its version of this commit
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Tests of the sync, the logger and the debug mode (make test)
+        run: make test
+        env:
+          JUNIT_DIR: ${{ runner.temp }}/junit
+      - name: Tests report
+        if: ${{ !cancelled() }}
+        uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        with:
+          report_paths: ${{ runner.temp }}/junit/*.xml
+          check_name: tests report
+          annotate_only: true
+          detailed_summary: true
+          require_tests: true
+
+  # the changes a pull request would bring to the repositories, nothing is pushed
+  sync-preview:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install PyYAML
+        run: pip install -r tests/requirements-lint.txt
+      - name: Sync preview (the job summary)
+        run: python3 sync/sync.py

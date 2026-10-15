@@ -1,0 +1,62 @@
+---
+# The lint job of the MCloud repositories: tests/lint.sh of the calling repository, its JUnit report and XML.
+#   jobs:
+#     lint:
+#       uses: zebrunner/mcloud-conventions/.github/workflows/lint.yml@v1
+# The tag v1 is moved to a compatible change of this workflow, an incompatible one gets v2 (README.md).
+name: lint
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: the JDK of the Maven checks (mcloud-grid), no JDK by default
+        type: string
+        default: ""
+      timeout-minutes:
+        description: the timeout of the job
+        type: number
+        default: 10
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - if: ${{ inputs.java-version != '' }}
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+      - name: Install linters
+        run: pip install -r tests/requirements-lint.txt
+      - name: Lint the project files (tests/lint.sh)
+        run: tests/lint.sh
+        env:
+          # with a JDK the Maven of the runner runs the Java checks, no image pull is needed
+          MVN: ${{ inputs.java-version != '' && 'mvn' || '' }}
+          JUNIT_DIR: ${{ runner.temp }}/junit
+      - name: Lint report
+        if: ${{ !cancelled() }}
+        uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        with:
+          report_paths: ${{ runner.temp }}/junit/*.xml
+          check_name: lint report
+          # annotations and the job summary only: no check run, so a read-only token is enough
+          annotate_only: true
+          detailed_summary: true
+          require_tests: true
+      - name: Upload lint JUnit XML
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-lint
+          path: ${{ runner.temp }}/junit/

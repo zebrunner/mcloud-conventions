@@ -1,0 +1,38 @@
+---
+# Opens or updates the pull request mcloud-conventions-sync in every repository of sync/targets.yml with a change
+# of the shared files. Needs the secret CONVENTIONS_SYNC_TOKEN (README.md).
+name: Sync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install PyYAML
+        run: pip install -r tests/requirements-lint.txt
+      - name: Sync the repositories
+        env:
+          GH_TOKEN: ${{ secrets.CONVENTIONS_SYNC_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::the secret CONVENTIONS_SYNC_TOKEN is missing, see README.md"
+            exit 1
+          fi
+          git config --global user.name "mcloud-conventions sync"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 sync/sync.py --push

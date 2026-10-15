@@ -1,0 +1,13 @@
+---
+version: 2
+updates:
+  # actions/* and the other actions of .github/workflows
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # the linters of tests/requirements-lint.txt: the shared ones reach the repositories by the sync
+  - package-ecosystem: pip
+    directory: /tests
+    schedule:
+      interval: weekly
