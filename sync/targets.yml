@@ -36,6 +36,8 @@ repos:
     groups: [all, shell-image]
   zebrunner/mcloud-ios-connector:
     groups: [all, shell-image]
+  zebrunner/mcloud-device:
+    groups: [all, shell-image]
   zebrunner/mcloud-grid:
     groups: [all]
   zebrunner/mcloud-agent:
