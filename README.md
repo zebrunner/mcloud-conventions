@@ -1,6 +1,6 @@
 # MCloud conventions
 
-The shared conventions, files and checks of the Zebrunner MCloud repositories: [appium](https://github.com/zebrunner/appium), [mcloud-android-connector](https://github.com/zebrunner/mcloud-android-connector), [mcloud-ios-connector](https://github.com/zebrunner/mcloud-ios-connector), [mcloud-device](https://github.com/zebrunner/mcloud-device), [mcloud-grid](https://github.com/zebrunner/mcloud-grid) and [mcloud-agent](https://github.com/zebrunner/mcloud-agent). The rules themselves are in [CONVENTIONS.md](CONVENTIONS.md).
+The shared conventions, files and checks of the Zebrunner MCloud repositories: [appium](https://github.com/zebrunner/appium), [mcloud-android-connector](https://github.com/zebrunner/mcloud-android-connector), [mcloud-ios-connector](https://github.com/zebrunner/mcloud-ios-connector), [mcloud-device](https://github.com/zebrunner/mcloud-device), [mcloud-grid](https://github.com/zebrunner/mcloud-grid), [mcloud-agent](https://github.com/zebrunner/mcloud-agent) and [mcloud](https://github.com/zebrunner/mcloud). The rules themselves are in [CONVENTIONS.md](CONVENTIONS.md).
 
 ## How it works
 

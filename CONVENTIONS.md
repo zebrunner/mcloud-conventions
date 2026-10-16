@@ -8,6 +8,7 @@ The conventions of the style, the formatting and the tooling of the Zebrunner MC
 - [mcloud-device](https://github.com/zebrunner/mcloud-device)
 - [mcloud-grid](https://github.com/zebrunner/mcloud-grid)
 - [mcloud-agent](https://github.com/zebrunner/mcloud-agent)
+- [mcloud](https://github.com/zebrunner/mcloud)
 
 This file is the same in all of them: a change of a convention is made in every repository, and a new repository starts with a copy of it and of the shared files listed below. Most of the rules are checked by `make lint`; the rest is kept by review. The rules that come from the kind of a project (Java, Ansible) are in [Project rules](#project-rules).
 
@@ -32,8 +33,8 @@ This file is the same in all of them: a change of a convention is made in every 
 
 | Path | What it is |
 | --- | --- |
-| `Dockerfile` | the image (mcloud-agent has none) |
-| `entrypoint.sh`, `util/`, `bin/` | the scripts and binaries of the image (`files/` in appium, `src/` in mcloud-grid, `roles/` in mcloud-agent) |
+| `Dockerfile` | the image (mcloud-agent and mcloud have none) |
+| `entrypoint.sh`, `util/`, `bin/` | the scripts and binaries of the image (`files/` in appium, `src/` in mcloud-grid, `roles/` in mcloud-agent, `docker-compose.yml` and `configuration/` in mcloud) |
 | `tests/lib.sh` | the shared helpers of the test scripts; `tests/project_lib.sh` the helpers of the project |
 | `tests/lint.sh` | the static checks of `make lint`; `tests/lint_project.sh` the settings and the checks of the project |
 | `tests/<subject>_test.sh` | a test script; the docker ones are listed in `DOCKER_TESTS` of the `Makefile` |
@@ -144,7 +145,7 @@ wait_for() {
 | --- | --- | --- |
 | env vars of the image, exported vars, constants | `UPPER_SNAKE_CASE` | `DEVICE_UDID`, `MIN_ANDROID` |
 | variables and functions of the scripts of an image | `lowerCamelCase` | `isConfigValid`, `exitIfAdbServerStopped()` |
-| variables and functions of the host scripts of mcloud-agent | `snake_case` | `create_containers()` |
+| variables and functions of the host scripts of mcloud-agent and mcloud | `snake_case` | `create_containers()` |
 | variables and functions of `tests/`, `scripts/`, `build.sh` | `snake_case` | `check_contains()`, `diff_file` |
 | file names | `kebab-case.sh`; `<subject>_test.sh` for the tests | `build-patch.sh`, `entrypoint_test.sh` |
 
@@ -307,6 +308,7 @@ The rules above are the same for every repository; these ones come from the kind
 | appium, mcloud-android-connector, mcloud-ios-connector, mcloud-device | a docker image of shell scripts | `make test` runs `tests/*_test.sh` but `DOCKER_TESTS`, `make docker` the image tests |
 | mcloud-grid | a docker image of a Java 11 application (Maven, Selenium 3 hub) | see [Java](#java) |
 | mcloud-agent | Ansible playbooks and the scripts of the farm hosts (Linux and macOS), no image | see [Ansible and host scripts](#ansible-and-host-scripts) |
+| mcloud | the docker compose deployment of the STF and grid servers and its `zebrunner.sh`, no image | see [Compose deployment](#compose-deployment) |
 
 ### Java
 
@@ -321,6 +323,14 @@ The rules above are the same for every repository; these ones come from the kind
 - `zebrunner.sh` and the templates run on the farm hosts, also on macOS: bash 3.2 compatible, `snake_case` like the rest of their code, and their messages are for a person at the terminal (`echo`), not log lines of `util/logger.sh`.
 - Python (the test fakes): ruff (`ruff.toml`).
 - The tests run on Linux and macOS (the CI matrix); `make docker` runs the checks in the Linux image of `tests/Dockerfile`.
+
+### Compose deployment
+
+- `docker-compose.yml` takes the image tags (`TAG_*`) and the ports from `.env`, the configuration of the services from `variables.env`; `./zebrunner.sh setup` writes them from `.env.original` and `variables.env.original`, which keep the defaults; `make lint` checks `docker compose config` with them.
+- The images are pinned by their tags in `.env.original`, one tag per image.
+- `zebrunner.sh` and `patch/*.sh` are host scripts like the ones of mcloud-agent: bash 3.2 compatible, `snake_case`, messages for a person at the terminal (`echo`), not `util/logger.sh`.
+- The static files of other projects (the Selenium grid console of `configuration/stf-proxy/grid/`) are kept byte for byte: `generated` of `tests/lint_project.sh`.
+- `make test` runs the commands of `zebrunner.sh` on a copy of the repository with a `docker` stub; `make docker` starts the services and checks their endpoints (`DOCKER_TESTS`).
 
 ## New repository checklist
 
