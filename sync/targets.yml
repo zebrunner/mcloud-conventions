@@ -42,3 +42,5 @@ repos:
     groups: [all]
   zebrunner/mcloud-agent:
     groups: [all]
+  zebrunner/mcloud:
+    groups: [all]
