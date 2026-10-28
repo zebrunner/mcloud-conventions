@@ -1,0 +1,8 @@
+---
+# actionlint 1.7.12 does not know the input `client-id` of actions/create-github-app-token@v3 yet (`app-id` is
+# deprecated there): its two errors are ignored in sync.yml only. Remove this file when actionlint knows the input.
+paths:
+  .github/workflows/sync.yml:
+    ignore:
+      - "missing input \"app-id\" which is required by action \"actions/create-github-app-token@v3\""
+      - "input \"client-id\" is not defined in action \"actions/create-github-app-token@v3\""
