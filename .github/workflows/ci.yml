@@ -42,6 +42,30 @@ jobs:
           detailed_summary: true
           require_tests: true
 
+  # the ecr-public-login action of the docker jobs, in its version of this commit
+  ecr-public-login:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Log in to public.ecr.aws
+        id: ecr
+        uses: ./.github/actions/ecr-public-login
+      - name: Docker is logged in, the AWS credentials are not in the environment
+        # the pull requests from forks and of Dependabot get no OIDC token, the action leaves their pulls anonymous
+        if: ${{ github.actor != 'dependabot[bot]' && !github.event.pull_request.head.repo.fork }}
+        run: |
+          [[ "$AUTHENTICATED" == true ]] || { echo "::error::docker is not logged in to public.ecr.aws"; exit 1; }
+          jq -e '.auths["public.ecr.aws"]' ~/.docker/config.json > /dev/null
+          [[ -z "${AWS_ACCESS_KEY_ID:-}${AWS_SECRET_ACCESS_KEY:-}${AWS_SESSION_TOKEN:-}" ]]
+        env:
+          AUTHENTICATED: ${{ steps.ecr.outputs.authenticated }}
+      - name: Pull an image
+        run: docker pull --quiet public.ecr.aws/docker/library/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+
   # the changes a pull request would bring to the repositories, nothing is pushed
   sync-preview:
     if: ${{ github.event_name == 'pull_request' }}

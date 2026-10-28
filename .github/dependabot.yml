@@ -1,9 +1,9 @@
 ---
 version: 2
 updates:
-  # actions/* and the other actions of .github/workflows
+  # actions/* and the other actions of .github/workflows and of the composite actions of .github/actions
   - package-ecosystem: github-actions
-    directory: /
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: weekly
   # the linters of tests/requirements-lint.txt: the shared ones reach the repositories by the sync

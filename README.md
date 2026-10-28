@@ -13,6 +13,7 @@ The shared conventions, files and checks of the Zebrunner MCloud repositories: [
 | `.github/workflows/sync.yml` | runs the sync as the GitHub App `mcloud-conventions-sync` on every merge into `main` (and by hand: Actions, Sync, Run workflow) |
 | `.mcloud-conventions` | in every repository: the checksums of its shared files and blocks; `make lint` fails when one of them is changed there |
 | `.github/workflows/lint.yml` | the reusable `lint` job of the repositories: `uses: zebrunner/mcloud-conventions/.github/workflows/lint.yml@v1` |
+| `.github/actions/ecr-public-login` | the login of the jobs that pull from public.ecr.aws: `uses: zebrunner/mcloud-conventions/.github/actions/ecr-public-login@v1`, see [The login to public.ecr.aws](#the-login-to-publicecraws) |
 
 ## Change a convention or a shared file
 
@@ -20,7 +21,20 @@ The shared conventions, files and checks of the Zebrunner MCloud repositories: [
 2. Merge it: the sync opens (or updates) a pull request in every repository it changes, their CI checks the change there.
 3. Review and merge those pull requests.
 
-A change of `.github/workflows/lint.yml` reaches the repositories through the tag `v1`: move it to the new commit after the merge (`git tag -f v1 && git push -f origin v1`) when the change is compatible, an incompatible change gets `v2` and the repositories switch to it.
+A change of `.github/workflows/lint.yml` or of `.github/actions/` reaches the repositories through the tag `v1`: move it to the new commit after the merge (`git tag -f v1 && git push -f origin v1`) when the change is compatible, an incompatible change gets `v2` and the repositories switch to it.
+
+## The login to public.ecr.aws
+
+The anonymous pulls of public.ecr.aws are limited to 1 per second per IP, and the runners of GitHub share their IPs with other users: the docker jobs failed with `429 Too Many Requests`. The authenticated pulls are counted per AWS account, 10 per second. The action `ecr-public-login` logs docker in with an IAM role of the AWS account `659932254483` through GitHub OIDC, no key is kept in GitHub; a job without an OIDC token (a pull request from a fork or of Dependabot) or with a failed login goes on with anonymous pulls. The `ecr-public-login` job of CI checks the action.
+
+The AWS side, IAM in the console:
+
+1. Identity providers, Add provider: OpenID Connect, URL `https://token.actions.githubusercontent.com`, audience `sts.amazonaws.com`.
+2. Policies, Create policy `ecr-public-pull`: `ecr-public:GetAuthorizationToken` and `sts:GetServiceBearerToken` on `*`, nothing else, so the role can only pull the public images.
+3. Roles, Create role `github-actions-ecr-public-pull`: Web identity, the provider above, audience `sts.amazonaws.com`, GitHub organization `zebrunner`, the policy `ecr-public-pull`.
+4. The role, Trust relationships, Edit trust policy: `token.actions.githubusercontent.com:sub` allows both `repo:zebrunner/*` and `repo:zebrunner@59013197/*`. GitHub gives some repositories (mcloud-conventions, mcloud-ios-connector) the immutable subject with the ids of the organization and the repository, `repo:zebrunner@59013197/mcloud-conventions@1419980015:...`; `gh api repos/zebrunner/<repository>/actions/oidc/customization/sub` shows the prefix of a repository.
+
+Its ARN is the default `role` of the action; another role is given with `with: role: <ARN>`.
 
 ## The access of the sync
 
