@@ -146,7 +146,7 @@ wait_for() {
 | env vars of the image, exported vars, constants | `UPPER_SNAKE_CASE` | `DEVICE_UDID`, `MIN_ANDROID` |
 | variables and functions of the scripts of an image | `lowerCamelCase` | `isConfigValid`, `exitIfAdbServerStopped()` |
 | variables and functions of the [host scripts](#host-scripts) | `snake_case` | `create_containers()` |
-| variables and functions of `tests/`, `scripts/`, `build.sh` | `snake_case` | `check_contains()`, `diff_file` |
+| variables and functions of `tests/`, `scripts/` | `snake_case` | `check_contains()`, `diff_file` |
 | file names | `kebab-case.sh`; `<subject>_test.sh` for the tests | `build-patch.sh`, `entrypoint_test.sh` |
 
 The env vars of tools keep the names of the tools (e.g. `npm_config_cache`).
