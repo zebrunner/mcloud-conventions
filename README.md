@@ -7,7 +7,7 @@ The shared conventions, files and checks of the Zebrunner MCloud repositories: [
 | Piece | What it does |
 | --- | --- |
 | the shared files | `CONVENTIONS.md`, `LICENSE`, `.shellcheckrc`, `.pymarkdown`, `tests/lib.sh`, `tests/lint.sh`, the debug mode and the logger of `shared/util/` with their tests; this repository uses them too |
-| the shared blocks | the lines between `# >>> mcloud-conventions` and `# <<< mcloud-conventions` of `.editorconfig`, `.gitignore` and `tests/requirements-lint.txt`; the lines after them are the project part of every repository |
+| the shared blocks | the lines between `# >>> mcloud-conventions` and `# <<< mcloud-conventions` of `.editorconfig`, `.gitignore`, `tests/requirements-lint.txt` and `Makefile`; the other lines are the project part of every repository |
 | `sync/targets.yml` | which repository gets which files, and the paths of a repository (e.g. `files/util/` of appium) |
 | `sync/sync.py` | applies the files and blocks to a repository, writes `.mcloud-conventions` (their checksums) and opens or updates the pull request `mcloud-conventions-sync` into its `develop` |
 | `.github/workflows/sync.yml` | runs the sync as the GitHub App `mcloud-conventions-sync` on every merge into `main` (and by hand: Actions, Sync, Run workflow) |
@@ -62,7 +62,7 @@ Without the App the sync takes the secret `CONVENTIONS_SYNC_TOKEN`: a fine-grain
 
 ## Add a repository
 
-1. In the repository: `.editorconfig`, `.gitignore` and `tests/requirements-lint.txt` with the markers of the shared block, `tests/lint_project.sh`, the `lint` job of the reusable workflow.
+1. In the repository: `.editorconfig`, `.gitignore`, `tests/requirements-lint.txt` and `Makefile` with the markers of the shared block, `tests/lint_project.sh`, the `lint` job of the reusable workflow.
 2. Here: the repository in `sync/targets.yml`; the App installed on it (Configure of the App in the organization Settings).
 3. Run the Sync workflow: the pull request brings the shared files and `.mcloud-conventions`.
 
