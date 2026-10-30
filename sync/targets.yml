@@ -18,6 +18,7 @@ groups:
       - .editorconfig
       - .gitignore
       - tests/requirements-lint.txt
+      - Makefile
   # the docker images of shell scripts: the debug mode and the logger with their tests
   shell-image:
     files:
