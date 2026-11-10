@@ -45,3 +45,5 @@ repos:
     groups: [all]
   zebrunner/mcloud:
     groups: [all]
+  zebrunner/mcloud-dummy:
+    groups: [all]
