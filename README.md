@@ -94,7 +94,7 @@ The AWS side, IAM in the console, with the provider of [The login to public.ecr.
    }
    ```
 
-4. ECR Public (us-east-1): every image has its repository, `zebrunner/<repository>`; a push to a missing one fails, create it first (e.g. mcloud-dummy).
+4. ECR Public (us-east-1), Repositories: every image has its repository, named as the GitHub repository (e.g. `mcloud-dummy`, without `zebrunner/`: it is the alias of the registry, `public.ecr.aws/zebrunner/<repository>`); a push to a missing one fails, create it first.
 
 Its ARN is the default `role` of the workflow; another role is given with `with: role: <ARN>`, another repository of the image with `with: image-repo: <repository>`.
 
