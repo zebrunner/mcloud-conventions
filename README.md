@@ -14,6 +14,7 @@ The shared conventions, files and checks of the Zebrunner MCloud repositories: [
 | `.mcloud-conventions` | in every repository: the checksums of its shared files and blocks; `make lint` fails when one of them is changed there |
 | `.github/workflows/lint.yml` | the reusable `lint` job of the repositories: `uses: zebrunner/mcloud-conventions/.github/workflows/lint.yml@v1` |
 | `.github/actions/ecr-public-login` | the login of the jobs that pull from public.ecr.aws: `uses: zebrunner/mcloud-conventions/.github/actions/ecr-public-login@v1`, see [The login to public.ecr.aws](#the-login-to-publicecraws) |
+| `.github/workflows/docker-publish.yml` | the reusable `publish` job of the images: the image of every merge into `develop` to public.ecr.aws, `uses: zebrunner/mcloud-conventions/.github/workflows/docker-publish.yml@v1`, see [The push to public.ecr.aws](#the-push-to-publicecraws) |
 
 ## Change a convention or a shared file
 
@@ -21,7 +22,7 @@ The shared conventions, files and checks of the Zebrunner MCloud repositories: [
 2. Merge it: the sync opens (or updates) a pull request in every repository it changes, their CI checks the change there.
 3. Review and merge those pull requests.
 
-A change of `.github/workflows/lint.yml` or of `.github/actions/` reaches the repositories through the tag `v1`: move it to the new commit after the merge (`git tag -f v1 && git push -f origin v1`) when the change is compatible, an incompatible change gets `v2` and the repositories switch to it.
+A change of `.github/workflows/lint.yml`, `.github/workflows/docker-publish.yml` or of `.github/actions/` reaches the repositories through the tag `v1`: move it to the new commit after the merge (`git tag -f v1 && git push -f origin v1`) when the change is compatible, an incompatible change gets `v2` and the repositories switch to it.
 
 ## The login to public.ecr.aws
 
@@ -35,6 +36,67 @@ The AWS side, IAM in the console:
 4. The role, Trust relationships, Edit trust policy: `token.actions.githubusercontent.com:sub` allows both `repo:zebrunner/*` and `repo:zebrunner@59013197/*`. GitHub gives some repositories (mcloud-conventions, mcloud-ios-connector) the immutable subject with the ids of the organization and the repository, `repo:zebrunner@59013197/mcloud-conventions@1419980015:...`; `gh api repos/zebrunner/<repository>/actions/oidc/customization/sub` shows the prefix of a repository.
 
 Its ARN is the default `role` of the action; another role is given with `with: role: <ARN>`.
+
+## The push to public.ecr.aws
+
+The `publish` job of the images (`.github/workflows/docker-publish.yml`) runs after all the other jobs of CI of a merge into `develop`: `make push` of the repository builds its `PLATFORMS` (arm64 with QEMU) and pushes `public.ecr.aws/zebrunner/<repository>:<version>-develop-<sha>`, `<version>` is the file `VERSION` of the repository (CONVENTIONS.md#versions), `<sha>` the first 7 characters of the commit. Then `<version>-develop-latest` is moved to it, only while the commit is the head of `develop`: the jobs of a repository run one at a time, a slower run of an older commit does not take the tag back. The pull requests do not push anything.
+
+The AWS side, IAM in the console, with the provider of [The login to public.ecr.aws](#the-login-to-publicecraws):
+
+1. Policies, Create policy `ecr-public-push`, JSON:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": ["ecr-public:GetAuthorizationToken", "sts:GetServiceBearerToken"],
+         "Resource": "*"
+       },
+       {
+         "Effect": "Allow",
+         "Action": [
+           "ecr-public:BatchCheckLayerAvailability",
+           "ecr-public:InitiateLayerUpload",
+           "ecr-public:UploadLayerPart",
+           "ecr-public:CompleteLayerUpload",
+           "ecr-public:PutImage"
+         ],
+         "Resource": "arn:aws:ecr-public::659932254483:repository/*"
+       }
+     ]
+   }
+   ```
+
+2. Roles, Create role `github-actions-ecr-public-push`: Web identity, the provider `token.actions.githubusercontent.com`, audience `sts.amazonaws.com`, the policy `ecr-public-push`.
+3. The role, Trust relationships, Edit trust policy: only the `develop` branch of the organization, both forms of the subject (see the pull role):
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": {"Federated": "arn:aws:iam::659932254483:oidc-provider/token.actions.githubusercontent.com"},
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com"},
+           "StringLike": {
+             "token.actions.githubusercontent.com:sub": [
+               "repo:zebrunner/*:ref:refs/heads/develop",
+               "repo:zebrunner@59013197/*:ref:refs/heads/develop"
+             ]
+           }
+         }
+       }
+     ]
+   }
+   ```
+
+4. ECR Public (us-east-1): every image has its repository, `zebrunner/<repository>`; a push to a missing one fails, create it first (e.g. mcloud-dummy).
+
+Its ARN is the default `role` of the workflow; another role is given with `with: role: <ARN>`, another repository of the image with `with: image-repo: <repository>`.
 
 ## The access of the sync
 

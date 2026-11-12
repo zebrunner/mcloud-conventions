@@ -1,0 +1,140 @@
+---
+# The publish job of the MCloud images: the image of a branch is pushed to public.ecr.aws after the checks of CI.
+#   jobs:
+#     publish:
+#       needs: [lint, tests, docker]
+#       if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+#       permissions:
+#         contents: read
+#         id-token: write
+#       uses: zebrunner/mcloud-conventions/.github/workflows/docker-publish.yml@v1
+# `make push` of the repository builds and pushes <version>-<branch>-<sha> (the first 7 characters of the commit),
+# <version> is the file VERSION of the repository, the release in work (CONVENTIONS.md#versions). The tag
+# <version>-<branch>-latest is moved to that image only while the commit is still the head of the branch, so a slower
+# run of an older commit does not take it back. The login uses the push role of README.md#the-push-to-publicecraws.
+# The tag v1 is moved to a compatible change of this workflow, an incompatible one gets v2 (README.md).
+name: docker-publish
+
+on:
+  workflow_call:
+    inputs:
+      image-repo:
+        description: the repository of the image, public.ecr.aws/zebrunner/<the name of the GitHub repository> by default
+        type: string
+        default: ""
+      role:
+        description: the IAM role that pushes to public.ecr.aws
+        type: string
+        default: arn:aws:iam::659932254483:role/github-actions-ecr-public-push
+      timeout-minutes:
+        description: the timeout of the job, the platforms other than amd64 are built with QEMU
+        type: number
+        default: 60
+    outputs:
+      image:
+        description: the pushed image, <image-repo>:<version>-<branch>-<sha>
+        value: ${{ jobs.publish.outputs.image }}
+      latest:
+        description: "`true` when <version>-<branch>-latest was moved to the image"
+        value: ${{ jobs.publish.outputs.latest }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # one push of a branch at a time: a newer commit waits for the running one, a waiting older commit is cancelled
+    concurrency:
+      group: docker-publish-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+      latest: ${{ steps.latest.outputs.moved }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: The tags of the image
+        id: tags
+        env:
+          IMAGE_REPO: ${{ inputs.image-repo }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/* || ! "$GITHUB_REF_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error title=docker-publish::${GITHUB_REF} is not a branch whose name can be a part of a docker tag"
+            exit 1
+          fi
+          version="$(tr -d '[:space:]' 2> /dev/null < VERSION || true)"
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error file=VERSION,title=docker-publish::VERSION is the release in work, e.g. 3.1: '${version}'"
+            exit 1
+          fi
+          image_repo="${IMAGE_REPO:-public.ecr.aws/zebrunner/${GITHUB_REPOSITORY#*/}}"
+          tag="${version}-${GITHUB_REF_NAME}-${GITHUB_SHA::7}"
+          {
+            echo "image-repo=${image_repo}"
+            echo "tag=${tag}"
+            echo "latest=${version}-${GITHUB_REF_NAME}-latest"
+            echo "image=${image_repo}:${tag}"
+          } >> "$GITHUB_OUTPUT"
+      # the arm64 images are built on the amd64 runner
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - name: AWS credentials of the push role
+        id: aws
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.role }}
+          # the tokens of ECR Public are issued in us-east-1 only
+          aws-region: us-east-1
+          output-env-credentials: false
+          output-credentials: true
+          retry-max-attempts: 3
+      # the AWS credentials are given to the login step only, the build does not get them
+      - name: Log in to public.ecr.aws
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+        with:
+          registry-type: public
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ steps.aws.outputs.aws-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.aws.outputs.aws-secret-access-key }}
+          AWS_SESSION_TOKEN: ${{ steps.aws.outputs.aws-session-token }}
+      - name: Build and push the image (make push)
+        env:
+          IMAGE_REPO: ${{ steps.tags.outputs.image-repo }}
+          TAG: ${{ steps.tags.outputs.tag }}
+        run: make push VERSION="$TAG" IMAGE_REPO="$IMAGE_REPO"
+      - name: Move the latest tag of the branch
+        id: latest
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          LATEST: ${{ steps.tags.outputs.image-repo }}:${{ steps.tags.outputs.latest }}
+        run: |
+          head="$(git ls-remote --heads origin "$GITHUB_REF" | cut -f 1)"
+          if [[ "$head" == "$GITHUB_SHA" ]]; then
+            # the same manifest under the second tag, also for an image of one platform
+            docker buildx imagetools create --prefer-index=false --tag "$LATEST" "$IMAGE"
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=docker-publish::${GITHUB_REF_NAME} is at ${head} now, ${LATEST} is left to its run"
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Job summary
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          LATEST: ${{ steps.tags.outputs.image-repo }}:${{ steps.tags.outputs.latest }}
+          MOVED: ${{ steps.latest.outputs.moved }}
+        run: |
+          {
+            echo "### The image of ${GITHUB_REF_NAME}"
+            echo "- \`${IMAGE}\`"
+            if [[ "$MOVED" == true ]]; then
+              echo "- \`${LATEST}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
