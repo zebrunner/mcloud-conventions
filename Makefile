@@ -24,14 +24,20 @@ $(VENV)/.installed: tests/requirements-lint.txt
 
 .PHONY: help check lint test sync-preview
 
+# PyYAML of the sync and of its tests in .venv, without the linters of lint (hadolint): make test and sync-preview
+$(VENV)/.pyyaml: tests/requirements-lint.txt
+	python3 -m venv $(VENV)
+	$(VENV)/bin/pip install --quiet --disable-pip-version-check "$$(grep '^PyYAML==' tests/requirements-lint.txt)"
+	touch $@
+
 check: ## everything below but sync-preview, as CI runs it; every step runs, the failed ones fail the target
 	@status=0; for target in lint test; do $(MAKE) --no-print-directory $$target || status=1; done; exit $$status
 
 lint: $(VENV)/.installed ## the linters and the text file checks (tests/lint.sh), ruff
 	tests/lint.sh
 
-test: $(VENV)/.installed ## the tests of the sync, the logger and the debug mode (tests/*_test.sh)
+test: $(VENV)/.pyyaml ## the tests of the sync, the logger and the debug mode (tests/*_test.sh)
 	@status=0; for t in $(sort $(wildcard tests/*_test.sh)); do $$t || status=1; done; exit $$status
 
-sync-preview: $(VENV)/.installed ## the changes the sync would make in the repositories, nothing is pushed
-	python3 sync/sync.py
+sync-preview: $(VENV)/.pyyaml ## the changes the sync would make in the repositories, nothing is pushed
+	$(VENV)/bin/python3 sync/sync.py
