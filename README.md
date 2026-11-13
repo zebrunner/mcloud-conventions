@@ -6,7 +6,7 @@ The shared conventions, files and checks of the Zebrunner MCloud repositories: [
 
 | Piece | What it does |
 | --- | --- |
-| the shared files | `CONVENTIONS.md`, `LICENSE`, `.shellcheckrc`, `.pymarkdown`, `tests/lib.sh`, `tests/lint.sh`, the debug mode and the logger of `shared/util/` with their tests; this repository uses them too |
+| the shared files | `CONVENTIONS.md`, `LICENSE`, `.shellcheckrc`, `.pymarkdown`, `tests/lib.sh`, `tests/lint.sh`, the debug mode and the logger of `shared/util/` with their tests; `shared/patch/curve_keygen.py` of mcloud and mcloud-agent; this repository uses them too |
 | the shared blocks | the lines between `# >>> mcloud-conventions` and `# <<< mcloud-conventions` of `.editorconfig`, `.gitignore`, `tests/requirements-lint.txt` and `Makefile`; the other lines are the project part of every repository |
 | `sync/targets.yml` | which repository gets which files, and the paths of a repository (e.g. `files/util/` of appium) |
 | `sync/sync.py` | applies the files and blocks to a repository, writes `.mcloud-conventions` (their checksums) and opens or updates the pull request `mcloud-conventions-sync` into its `develop` |
