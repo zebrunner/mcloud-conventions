@@ -26,6 +26,10 @@ groups:
       - shared/util/logger.sh: util/logger.sh
       - tests/debug_test.sh
       - tests/logger_test.sh
+  # the host scripts of the setup of mcloud and mcloud-agent (their tests stay in the repositories)
+  host:
+    files:
+      - shared/patch/curve_keygen.py: patch/curve_keygen.py
 
 repos:
   zebrunner/appium:
@@ -42,8 +46,8 @@ repos:
   zebrunner/mcloud-grid:
     groups: [all]
   zebrunner/mcloud-agent:
-    groups: [all]
+    groups: [all, host]
   zebrunner/mcloud:
-    groups: [all]
+    groups: [all, host]
   zebrunner/mcloud-dummy:
     groups: [all]

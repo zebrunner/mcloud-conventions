@@ -59,7 +59,7 @@ This file is the same in all of them: a change of a convention is made in every 
 
 The shared files live in [mcloud-conventions](https://github.com/zebrunner/mcloud-conventions) and are changed there only:
 
-- the whole files, the same in every repository: `CONVENTIONS.md`, `LICENSE`, `.shellcheckrc`, `.pymarkdown`, `tests/lib.sh`, `tests/lint.sh`; in the images of shell scripts also the debug mode `util/debug.sh` and the logger `util/logger.sh` (`files/util/` in appium) with their tests `tests/debug_test.sh` and `tests/logger_test.sh`;
+- the whole files, the same in every repository: `CONVENTIONS.md`, `LICENSE`, `.shellcheckrc`, `.pymarkdown`, `tests/lib.sh`, `tests/lint.sh`; in the images of shell scripts also the debug mode `util/debug.sh` and the logger `util/logger.sh` (`files/util/` in appium) with their tests `tests/debug_test.sh` and `tests/logger_test.sh`; in mcloud and mcloud-agent also `patch/curve_keygen.py`, the CURVE keys of STF;
 - the shared blocks of `.editorconfig`, `.gitignore`, `tests/requirements-lint.txt` and `Makefile`: the lines between `# >>> mcloud-conventions` and `# <<< mcloud-conventions`, the other lines are the project part.
 
 A merge into mcloud-conventions syncs them: its workflow opens (or updates) the pull request `mcloud-conventions-sync` into `develop` of every repository it changes, which is reviewed and merged like any other one. The sync also writes `.mcloud-conventions`, the checksums of the shared files and blocks, and `make lint` fails when one of them is changed in the repository.
