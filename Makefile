@@ -36,7 +36,7 @@ check: ## everything below but sync-preview, as CI runs it; every step runs, the
 lint: $(VENV)/.installed ## the linters and the text file checks (tests/lint.sh), ruff
 	tests/lint.sh
 
-test: $(VENV)/.pyyaml ## the tests of the sync, the logger and the debug mode (tests/*_test.sh)
+test: $(VENV)/.pyyaml ## the tests of the sync, the logger, the debug mode and the publish job (tests/*_test.sh)
 	@status=0; for t in $(sort $(wildcard tests/*_test.sh)); do $$t || status=1; done; exit $$status
 
 sync-preview: $(VENV)/.pyyaml ## the changes the sync would make in the repositories, nothing is pushed

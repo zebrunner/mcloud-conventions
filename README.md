@@ -39,7 +39,7 @@ Its ARN is the default `role` of the action; another role is given with `with: r
 
 ## The push to public.ecr.aws
 
-The `publish` job of the images (`.github/workflows/docker-publish.yml`) runs after all the other jobs of CI of a merge into `develop`: `make push` of the repository builds its `PLATFORMS` (arm64 with QEMU) and pushes `public.ecr.aws/zebrunner/<repository>:<version>-develop-<sha>`, `<version>` is the file `VERSION` of the repository (CONVENTIONS.md#versions), `<sha>` the first 7 characters of the commit. Then `<version>-develop-latest` is moved to it, only while the commit is the head of `develop`: the jobs of a repository run one at a time, a slower run of an older commit does not take the tag back. The pull requests do not push anything.
+The `publish` job of the images (`.github/workflows/docker-publish.yml`) runs after all the other jobs of CI of a merge into `develop`: `make push` of the repository builds its `PLATFORMS` (arm64 with QEMU) and pushes `public.ecr.aws/zebrunner/<repository>:<version>-develop-<sha>`, `<version>` is the file `VERSION` of the repository (CONVENTIONS.md#versions), `<sha>` the first 7 characters of the commit. Then `<version>-develop-latest` is moved to it (retried for up to 150 s: ECR Public serves a manifest just pushed seconds later), only while the commit is the head of `develop`: the jobs of a repository run one at a time, a slower run of an older commit does not take the tag back. The pull requests do not push anything.
 
 The AWS side, IAM in the console, with the provider of [The login to public.ecr.aws](#the-login-to-publicecraws):
 
