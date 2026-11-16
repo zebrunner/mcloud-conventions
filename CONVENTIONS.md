@@ -268,7 +268,7 @@ HEALTHCHECK --interval=20s --timeout=5s --start-period=120s --retries=3 \
 
 ## Markdown
 
-- pymarkdown with `.pymarkdown`: the line length is not limited, the allowed HTML is `p`, `a`, `img`, `b`, `br`.
+- pymarkdown with `.pymarkdown` checks every `*.md` of the repository but the `generated` ones: the line length is not limited, the allowed HTML is `p`, `a`, `img`, `b`, `br`.
 - A paragraph or a list item is one line, no hard wraps.
 - `-` for the list items, 2 spaces for a nested list.
 - Tables with `| --- |` delimiters and spaces around the cell content.
