@@ -1,6 +1,8 @@
 #!/bin/bash
 # Tests of sync/sync.py with local target repositories: the shared files, the shared blocks, the checksums of
-# .mcloud-conventions (the way tests/lint.sh checks them), no change on the second run, a target without the markers.
+# .mcloud-conventions (the way tests/lint.sh checks them), no change on the second run, the files that are no longer
+# shared, the other changes of a checkout, the push with a local origin and a gh stub, the errors, a target without the
+# markers.
 source "$(dirname "$0")/lib.sh"
 cd "$REPO" || exit 1
 
@@ -93,6 +95,95 @@ check "the manifest is not rewritten" "" "$(git -C "$IMAGE" status --porcelain)"
 echo "local change" >> "${IMAGE}/tests/lint.sh"
 check_contains "a local change of a shared file is reverted" "test/image: up to date" "$(sync --repo test/image --local "test/image=${IMAGE}")"
 check "the shared file is the one of the source again" "$(cat tests/lint.sh)" "$(cat "${IMAGE}/tests/lint.sh")"
+
+section "a file that is no longer shared"
+sed -e 's/files: \[CONVENTIONS.md, tests\/lint.sh\]/files: [CONVENTIONS.md]/' \
+  -e 's/blocks: \[.editorconfig, .gitignore, tests\/requirements-lint.txt\]/blocks: [.editorconfig, .gitignore]/' \
+  "${WORK}/targets.yml" > "${WORK}/fewer.yml"
+out="$(sync --config "${WORK}/fewer.yml" --repo test/image --local "test/image=${IMAGE}")"
+check_contains "the removal is a change" "tests/lint.sh" "$out"
+check "the synced file is removed" "false" "$([[ -e "${IMAGE}/tests/lint.sh" ]] && echo true || echo false)"
+check "the manifest lists the shared files only" "CONVENTIONS.md files/util/logger.sh .editorconfig#block .gitignore#block " \
+  "$(grep -v '^#' "${IMAGE}/.mcloud-conventions" | awk '{ print $2 }' | tr '\n' ' ')"
+check "the block that is no longer shared stays" "$(block tests/requirements-lint.txt)" "$(block "${IMAGE}/tests/requirements-lint.txt")"
+git_in "$IMAGE" checkout --quiet -- .
+git_in "$IMAGE" clean --quiet -fd
+# the first entry of the manifest: the rest of it is the new one
+echo "project change" >> "${IMAGE}/CONVENTIONS.md"
+git_in "$IMAGE" commit --quiet --all --message "a change of the project"
+sed 's/files: \[CONVENTIONS.md, tests\/lint.sh\]/files: [tests\/lint.sh]/' "${WORK}/targets.yml" > "${WORK}/fewer.yml"
+sync --config "${WORK}/fewer.yml" --repo test/image --local "test/image=${IMAGE}" > /dev/null
+check_contains "a changed file that is no longer shared is kept" "project change" "$(cat "${IMAGE}/CONVENTIONS.md")"
+check_not_contains "the kept file is not in the manifest" "CONVENTIONS.md" "$(grep -v '^#' "${IMAGE}/.mcloud-conventions")"
+git_in "$IMAGE" checkout --quiet -- .
+git_in "$IMAGE" clean --quiet -fd
+echo "outside" > "${WORK}/outside.txt"
+echo "$(sum "${WORK}/outside.txt")  ../outside.txt" >> "${IMAGE}/.mcloud-conventions"
+sync --repo test/image --local "test/image=${IMAGE}" > /dev/null
+check "a file outside of the repository is not removed" "true" "$([[ -e "${WORK}/outside.txt" ]] && echo true || echo false)"
+git_in "$IMAGE" commit --quiet --all --message "sync again"
+
+section "the other changes of a local checkout"
+echo "notes" > "${IMAGE}/notes.txt"
+echo "readme" > "${IMAGE}/README.md"
+git_in "$IMAGE" add README.md
+git_in "$IMAGE" commit --quiet --message "readme"
+echo "work in progress" >> "${IMAGE}/README.md"
+git_in "$IMAGE" add README.md
+out="$(sync --repo test/image --local "test/image=${IMAGE}")"
+check_contains "an untracked file and a staged change of another file are not the changes of the sync" \
+  "test/image: up to date" "$out"
+
+section "push"
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
+git clone --quiet --bare "$IMAGE" "${WORK}/origin.git"
+# origin <git arguments...>: git in the bare origin of the target
+origin() {
+  git --git-dir="${WORK}/origin.git" "$@"
+}
+git_in "$IMAGE" remote add origin "${WORK}/origin.git"
+base="$(git -C "$IMAGE" symbolic-ref --short HEAD)"
+# gh: logs its calls; pr list prints the number of the open pull request of ${WORK}/open-pr
+stub gh "echo \"gh \$*\" >> '${WORK}/calls.log'
+if [[ \"\$1 \$2\" == 'pr list' ]]; then cat '${WORK}/open-pr' 2> /dev/null; fi
+if [[ \"\$1 \$2\" == 'pr create' ]]; then echo https://github.com/test/image/pull/1; fi"
+# push_sync: the sync of test/image with --push and the gh stub
+push_sync() {
+  git_in "$IMAGE" checkout --quiet "$base"
+  PATH="${WORK}/bin:${PATH}" sync --repo test/image --local "test/image=${IMAGE}" --push
+}
+echo "drift" >> "${IMAGE}/CONVENTIONS.md"
+git_in "$IMAGE" commit --quiet --message "a drift of a shared file" -- CONVENTIONS.md
+out="$(push_sync)"
+check_contains "the pull request is opened" "test/image: https://github.com/test/image/pull/1" "$out"
+pushed="$(origin rev-parse mcloud-conventions-sync 2> /dev/null)"
+check "the commit of the sync has its paths only, not the other changes of the checkout" "CONVENTIONS.md" \
+  "$(origin diff --name-only mcloud-conventions-sync^ mcloud-conventions-sync 2> /dev/null | tr '\n' ' ' | sed 's/ $//')"
+echo 1 > "${WORK}/open-pr"
+reset_calls
+out="$(push_sync)"
+check_contains "the same files are not pushed again" "test/image: https://github.com/test/image/pull/1 (unchanged)" "$out"
+check "the branch of the sync is kept" "$pushed" "$(origin rev-parse mcloud-conventions-sync)"
+check_not_contains "the pull request is not edited" "gh pr edit" "$(cat "${WORK}/calls.log")"
+git_in "$IMAGE" checkout --quiet "$base"
+git_in "$IMAGE" reset --quiet --hard mcloud-conventions-sync
+reset_calls
+out="$(push_sync)"
+check_contains "the pull request of a target that is up to date is closed" "test/image: up to date, closed the stale" "$out"
+check_contains "the stale pull request and its branch" "gh pr close 1 --repo test/image --delete-branch" "$(cat "${WORK}/calls.log")"
+
+section "errors"
+out="$(sync --repo test/nope)"
+check "an unknown repository is a usage error" "2" "$?"
+check_contains "the unknown repository is reported" "unknown --repo test/nope" "$out"
+sync --local test/image > /dev/null
+check "a --local without the path is a usage error" "2" "$?"
+mkdir -p "${WORK}/git-only"
+ln -s "$(command -v git)" "${WORK}/git-only/git"
+out="$(cd "$REPO" && PATH="${WORK}/git-only" "$(command -v python3)" sync/sync.py --config "${WORK}/targets.yml" \
+  --repo test/image --local "test/image=${IMAGE}" --push 2>&1)"
+check "a missing gh fails the sync" "1" "$?"
+check_contains "the missing gh is reported" "test/image: FAIL: gh can't be run" "$out"
 
 section "a target without the markers"
 BROKEN="${WORK}/broken"

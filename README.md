@@ -9,7 +9,7 @@ The shared conventions, files and checks of the Zebrunner MCloud repositories: [
 | the shared files | `CONVENTIONS.md`, `LICENSE`, `.shellcheckrc`, `.pymarkdown`, `tests/lib.sh`, `tests/lint.sh`, the debug mode and the logger of `shared/util/` with their tests; this repository uses them too |
 | the shared blocks | the lines between `# >>> mcloud-conventions` and `# <<< mcloud-conventions` of `.editorconfig`, `.gitignore`, `tests/requirements-lint.txt` and `Makefile`; the other lines are the project part of every repository |
 | `sync/targets.yml` | which repository gets which files, and the paths of a repository (e.g. `files/util/` of appium) |
-| `sync/sync.py` | applies the files and blocks to a repository, writes `.mcloud-conventions` (their checksums) and opens or updates the pull request `mcloud-conventions-sync` into its `develop` |
+| `sync/sync.py` | applies the files and blocks to a repository, writes `.mcloud-conventions` (their checksums) and opens or updates the pull request `mcloud-conventions-sync` into its `develop`; a file removed from `sync/targets.yml` is removed from the repository while it is the synced one (a changed one and a block stay, the project's now), the pull request of a repository that is up to date is closed, the same files are not pushed again |
 | `.github/workflows/sync.yml` | runs the sync as the GitHub App `mcloud-conventions-sync` on every merge into `main` (and by hand: Actions, Sync, Run workflow) |
 | `.mcloud-conventions` | in every repository: the checksums of its shared files and blocks; `make lint` fails when one of them is changed there |
 | `.github/workflows/lint.yml` | the reusable `lint` job of the repositories: `uses: zebrunner/mcloud-conventions/.github/workflows/lint.yml@v1` |
