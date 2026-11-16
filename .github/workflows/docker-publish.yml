@@ -9,11 +9,14 @@
 #         id-token: write
 #       uses: zebrunner/mcloud-conventions/.github/workflows/docker-publish.yml@v1
 # `make push` of the repository builds and pushes <version>-<branch>-<sha> (the first 7 characters of the commit),
-# <version> is the file VERSION of the repository, the release in work (CONVENTIONS.md#versions). The tag
-# <version>-<branch>-latest is moved to that image only while the commit is still the head of the branch, so a slower
-# run of an older commit does not take it back; the copy is retried while ECR Public does not serve the pushed
-# manifest yet (tests/docker_publish_test.sh). The login uses the push role of README.md#the-push-to-publicecraws.
-# The tag v1 is moved to a compatible change of this workflow, an incompatible one gets v2 (README.md).
+# <version> is the file VERSION of the repository, the release in work (CONVENTIONS.md#versions). Each platform of
+# PLATFORMS of the Makefile is built on a runner of its own (arm64 on an arm64 runner, no QEMU) and pushed by digest
+# (PUSH_OUTPUT of make push, its cache in PUSH_CACHE), then the platforms are merged into the image. A Makefile without
+# PUSH_OUTPUT gets one `make push` of all its platforms with QEMU. The tag <version>-<branch>-latest is moved to the image
+# only while the commit is still the head of the branch, so a slower run of an older commit does not take it back; the
+# merge and the copy are retried while ECR Public does not serve the pushed manifests yet (tests/docker_publish_test.sh).
+# The login uses the push role of README.md#the-push-to-publicecraws. The tag v1 is moved to a compatible change of this
+# workflow, an incompatible one gets v2 (README.md).
 name: docker-publish
 
 on:
@@ -28,7 +31,7 @@ on:
         type: string
         default: arn:aws:iam::659932254483:role/github-actions-ecr-public-push
       timeout-minutes:
-        description: the timeout of the job, the platforms other than amd64 are built with QEMU
+        description: the timeout of the build of a platform, the platforms other than amd64 and arm64 are built with QEMU
         type: number
         default: 60
     outputs:
@@ -43,24 +46,22 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.timeout-minutes }}
-    # one push of a branch at a time: a newer commit waits for the running one, a waiting older commit is cancelled
-    concurrency:
-      group: docker-publish-${{ github.repository }}-${{ github.ref }}
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      id-token: write
+    timeout-minutes: 10
     outputs:
+      image-repo: ${{ steps.tags.outputs.image-repo }}
+      tag: ${{ steps.tags.outputs.tag }}
+      latest: ${{ steps.tags.outputs.latest }}
       image: ${{ steps.tags.outputs.image }}
-      latest: ${{ steps.latest.outputs.moved }}
+      platforms: ${{ steps.tags.outputs.platforms }}
+      by-digest: ${{ steps.tags.outputs.by-digest }}
+      matrix: ${{ steps.tags.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: The tags of the image
+      - name: The tags and the platforms of the image
         id: tags
         env:
           IMAGE_REPO: ${{ inputs.image-repo }}
@@ -76,16 +77,62 @@ jobs:
           fi
           image_repo="${IMAGE_REPO:-public.ecr.aws/zebrunner/${GITHUB_REPOSITORY#*/}}"
           tag="${version}-${GITHUB_REF_NAME}-${GITHUB_SHA::7}"
+          # shellcheck disable=SC2016 # $(PLATFORMS) is expanded by make
+          platforms="$(make --no-print-directory -s -f Makefile -f - docker-publish-platforms \
+            <<< 'docker-publish-platforms: ; @echo $(PLATFORMS)' | tr -d '[:space:]')"
+          if [[ ! "$platforms" =~ ^[a-z0-9/]+(,[a-z0-9/]+)*$ ]]; then
+            echo "::error file=Makefile,title=docker-publish::PLATFORMS of make push, e.g. linux/amd64,linux/arm64: '${platforms}'"
+            exit 1
+          fi
+          # arm64 is built on an arm64 runner, the platforms other than amd64 and arm64 with QEMU on an amd64 one
+          entry() {
+            local runner=ubuntu-latest qemu=true
+            [[ "$1" != linux/amd64 ]] || qemu=false
+            [[ ! "$1" =~ ^linux/arm64(/v8)?$ ]] || { runner=ubuntu-24.04-arm; qemu=false; }
+            jq -cn --arg platform "$1" --arg name "$2" --arg runner "$runner" --argjson qemu "$qemu" \
+              '{platform: $platform, name: $name, runner: $runner, qemu: $qemu}'
+          }
+          # make push of a Makefile with PUSH_OUTPUT pushes one platform by digest, an older one all of them with QEMU
+          if make --no-print-directory -n push VERSION="$tag" IMAGE_REPO="$image_repo" PUSH_OUTPUT=--docker-publish 2> /dev/null \
+            | grep -q -- '--docker-publish'; then
+            by_digest=true
+            matrix="$(for platform in ${platforms//,/ }; do entry "$platform" "${platform//\//-}"; done | jq -cs .)"
+          else
+            by_digest=false
+            echo "::notice file=Makefile,title=docker-publish::make push has no PUSH_OUTPUT: ${platforms} on one runner, QEMU (CONVENTIONS.md#makefile)"
+            if [[ "$platforms" == *,* ]]; then
+              matrix="$(jq -cn --arg platform "$platforms" '[{platform: $platform, name: "all", runner: "ubuntu-latest", qemu: true}]')"
+            else
+              matrix="[$(entry "$platforms" all)]"
+            fi
+          fi
           {
             echo "image-repo=${image_repo}"
             echo "tag=${tag}"
             echo "latest=${version}-${GITHUB_REF_NAME}-latest"
             echo "image=${image_repo}:${tag}"
+            echo "platforms=${platforms}"
+            echo "by-digest=${by_digest}"
+            echo "matrix=${matrix}"
           } >> "$GITHUB_OUTPUT"
-      # the arm64 images are built on the amd64 runner
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+  build:
+    name: build ${{ matrix.platform }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
         with:
-          platforms: arm64
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: matrix.qemu
       - name: AWS credentials of the push role
         id: aws
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -106,16 +153,120 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ steps.aws.outputs.aws-access-key-id }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.aws.outputs.aws-secret-access-key }}
           AWS_SESSION_TOKEN: ${{ steps.aws.outputs.aws-session-token }}
+      # the cache of GitHub Actions (type=gha of PUSH_CACHE) needs the runtime token of the runner in the environment
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+        if: needs.prepare.outputs.by-digest == 'true'
       - name: Build and push the image (make push)
         env:
-          IMAGE_REPO: ${{ steps.tags.outputs.image-repo }}
-          TAG: ${{ steps.tags.outputs.tag }}
-        run: make push VERSION="$TAG" IMAGE_REPO="$IMAGE_REPO"
+          IMAGE_REPO: ${{ needs.prepare.outputs.image-repo }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BY_DIGEST: ${{ needs.prepare.outputs.by-digest }}
+          PLATFORM: ${{ matrix.platform }}
+          NAME: ${{ matrix.name }}
+        run: |
+          if [[ "$BY_DIGEST" != true ]]; then
+            make push VERSION="$TAG" IMAGE_REPO="$IMAGE_REPO"
+            exit 0
+          fi
+          # the platform is pushed without a tag, the publish job merges the digests of the platforms into the image
+          metadata="${RUNNER_TEMP}/metadata.json"
+          make push VERSION="$TAG" IMAGE_REPO="$IMAGE_REPO" PLATFORMS="$PLATFORM" \
+            PUSH_OUTPUT="--output type=image,name=${IMAGE_REPO},push-by-digest=true,name-canonical=true,push=true --metadata-file ${metadata}" \
+            PUSH_CACHE="--cache-from type=gha,scope=docker-publish-${NAME} --cache-to type=gha,mode=max,scope=docker-publish-${NAME},ignore-error=true"
+          digest="$(jq -r '."containerimage.digest" // empty' "$metadata" 2> /dev/null || true)"
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error title=docker-publish::make push of ${PLATFORM} wrote no digest of the image to ${metadata}: '${digest}'"
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/digests"
+          echo "$digest" > "${RUNNER_TEMP}/digests/${NAME}"
+          echo "::notice title=docker-publish::${PLATFORM}: ${IMAGE_REPO}@${digest}"
+      - uses: actions/upload-artifact@v7
+        if: needs.prepare.outputs.by-digest == 'true'
+        with:
+          name: docker-publish-digest-${{ matrix.name }}
+          path: ${{ runner.temp }}/digests/${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # one merge and move of the latest tag of a branch at a time: a newer commit waits for the running one, a waiting
+    # older commit is cancelled
+    concurrency:
+      group: docker-publish-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ needs.prepare.outputs.image }}
+      latest: ${{ steps.latest.outputs.moved }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: AWS credentials of the push role
+        id: aws
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.role }}
+          aws-region: us-east-1
+          output-env-credentials: false
+          output-credentials: true
+          retry-max-attempts: 3
+      - name: Log in to public.ecr.aws
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+        with:
+          registry-type: public
+        env:
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ steps.aws.outputs.aws-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.aws.outputs.aws-secret-access-key }}
+          AWS_SESSION_TOKEN: ${{ steps.aws.outputs.aws-session-token }}
+      - uses: actions/download-artifact@v8
+        if: needs.prepare.outputs.by-digest == 'true'
+        with:
+          pattern: docker-publish-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - name: Merge the platforms into the image
+        if: needs.prepare.outputs.by-digest == 'true'
+        env:
+          IMAGE_REPO: ${{ needs.prepare.outputs.image-repo }}
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          PLATFORMS: ${{ needs.prepare.outputs.platforms }}
+        run: |
+          sources=()
+          for platform in ${PLATFORMS//,/ }; do
+            digest="$(cat "${RUNNER_TEMP}/digests/${platform//\//-}" 2> /dev/null || true)"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error title=docker-publish::no digest of ${platform} from its build: '${digest}'"
+              exit 1
+            fi
+            sources+=("${IMAGE_REPO}@${digest}")
+          done
+          # one platform is tagged as it is, as make push pushes it; more of them get an index
+          options=(--tag "$IMAGE")
+          ((${#sources[@]} > 1)) || options+=(--prefer-index=false)
+          # ECR Public serves a manifest just pushed seconds later ("not found"): 6 attempts within 150 s
+          attempt=1
+          until docker buildx imagetools create "${options[@]}" "${sources[@]}"; do
+            if ((attempt == 6)); then
+              echo "::error title=docker-publish::${PLATFORMS} are not merged into ${IMAGE} after ${attempt} attempts"
+              exit 1
+            fi
+            echo "::warning title=docker-publish::the merge into ${IMAGE} failed (attempt ${attempt}), retried in $((attempt * 10)) s"
+            sleep $((attempt * 10))
+            attempt=$((attempt + 1))
+          done
       - name: Move the latest tag of the branch
         id: latest
         env:
-          IMAGE: ${{ steps.tags.outputs.image }}
-          LATEST: ${{ steps.tags.outputs.image-repo }}:${{ steps.tags.outputs.latest }}
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          LATEST: ${{ needs.prepare.outputs.image-repo }}:${{ needs.prepare.outputs.latest }}
         run: |
           head="$(git ls-remote --heads origin "$GITHUB_REF" | cut -f 1)"
           if [[ "$head" == "$GITHUB_SHA" ]]; then
@@ -138,13 +289,14 @@ jobs:
           fi
       - name: Job summary
         env:
-          IMAGE: ${{ steps.tags.outputs.image }}
-          LATEST: ${{ steps.tags.outputs.image-repo }}:${{ steps.tags.outputs.latest }}
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          LATEST: ${{ needs.prepare.outputs.image-repo }}:${{ needs.prepare.outputs.latest }}
+          PLATFORMS: ${{ needs.prepare.outputs.platforms }}
           MOVED: ${{ steps.latest.outputs.moved }}
         run: |
           {
             echo "### The image of ${GITHUB_REF_NAME}"
-            echo "- \`${IMAGE}\`"
+            echo "- \`${IMAGE}\` (${PLATFORMS//,/, })"
             if [[ "$MOVED" == true ]]; then
               echo "- \`${LATEST}\`"
             fi
