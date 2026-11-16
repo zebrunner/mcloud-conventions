@@ -11,7 +11,8 @@
 # `make push` of the repository builds and pushes <version>-<branch>-<sha> (the first 7 characters of the commit),
 # <version> is the file VERSION of the repository, the release in work (CONVENTIONS.md#versions). The tag
 # <version>-<branch>-latest is moved to that image only while the commit is still the head of the branch, so a slower
-# run of an older commit does not take it back. The login uses the push role of README.md#the-push-to-publicecraws.
+# run of an older commit does not take it back; the copy is retried while ECR Public does not serve the pushed
+# manifest yet (tests/docker_publish_test.sh). The login uses the push role of README.md#the-push-to-publicecraws.
 # The tag v1 is moved to a compatible change of this workflow, an incompatible one gets v2 (README.md).
 name: docker-publish
 
@@ -118,8 +119,18 @@ jobs:
         run: |
           head="$(git ls-remote --heads origin "$GITHUB_REF" | cut -f 1)"
           if [[ "$head" == "$GITHUB_SHA" ]]; then
-            # the same manifest under the second tag, also for an image of one platform
-            docker buildx imagetools create --prefer-index=false --tag "$LATEST" "$IMAGE"
+            # the same manifest under the second tag, also for an image of one platform. ECR Public serves a manifest
+            # just pushed seconds later ("not found"): 6 attempts within 150 s
+            attempt=1
+            until docker buildx imagetools create --prefer-index=false --tag "$LATEST" "$IMAGE"; do
+              if ((attempt == 6)); then
+                echo "::error title=docker-publish::${IMAGE} is not copied to ${LATEST} after ${attempt} attempts"
+                exit 1
+              fi
+              echo "::warning title=docker-publish::the copy to ${LATEST} failed (attempt ${attempt}), retried in $((attempt * 10)) s"
+              sleep $((attempt * 10))
+              attempt=$((attempt + 1))
+            done
             echo "moved=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice title=docker-publish::${GITHUB_REF_NAME} is at ${head} now, ${LATEST} is left to its run"
