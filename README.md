@@ -133,8 +133,8 @@ Without the App the sync takes the secret `CONVENTIONS_SYNC_TOKEN`: a fine-grain
 | Target | What it checks | Needs |
 | --- | --- | --- |
 | `make lint` | the shared `tests/lint.sh` with `tests/lint_project.sh` of this repository, ruff of the sync | Python 3; on macOS `brew install hadolint` |
-| `make test` | `tests/sync_test.sh` (the sync with local repositories), the logger and the debug mode | bash, Python 3 |
-| `make sync-preview` | the changes the sync would make in the repositories, nothing is pushed | Python 3, git |
+| `make test` | `tests/sync_test.sh` (the sync with local repositories), the logger and the debug mode | bash, Python 3 (PyYAML is installed into `.venv`, not the linters) |
+| `make sync-preview` | the changes the sync would make in the repositories, nothing is pushed | Python 3 (PyYAML is installed into `.venv`), git |
 
 `python3 sync/sync.py --repo zebrunner/appium --local zebrunner/appium=../appium` applies the shared files to a local checkout.
 
