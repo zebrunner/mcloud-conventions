@@ -12,16 +12,18 @@ section "keys"
 check "the X25519 test vector of RFC 7748" \
   "public=8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
 secret=77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a" \
-  "$(python3 "$KEYGEN" 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a)"
+  "$(echo 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a | python3 "$KEYGEN" -)"
 pair="$(python3 "$KEYGEN")"
 secret="$(sed -n 's/^secret=//p' <<< "$pair")"
 check "a new secret key is 64 hex characters" "true" "$([[ "$secret" =~ ^[0-9a-f]{64}$ ]] && echo true || echo false)"
-check "the public key of a new pair is the one of its secret key" "$pair" "$(python3 "$KEYGEN" "$secret")"
+check "the public key of a new pair is the one of its secret key" "$pair" "$(printf '%s\n' "$secret" | python3 "$KEYGEN" -)"
 
 section "errors"
-python3 "$KEYGEN" xyz > /dev/null 2>&1
+echo xyz | python3 "$KEYGEN" - > /dev/null 2>&1
 check "a secret key that is not 64 hex characters fails" "1" "$?"
-python3 "$KEYGEN" a b > /dev/null 2>&1
+python3 "$KEYGEN" 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a > /dev/null 2>&1
+check "the secret key as an argument is a usage error: the arguments of a process are visible to every user" "2" "$?"
+python3 "$KEYGEN" - b > /dev/null 2>&1
 check "more arguments are a usage error" "2" "$?"
 
 finish
