@@ -11,8 +11,8 @@
 # `make push` of the repository builds and pushes <version>-<branch>-<sha> (the first 7 characters of the commit),
 # <version> is the file VERSION of the repository, the release in work (CONVENTIONS.md#versions). Each platform of
 # PLATFORMS of the Makefile is built on a runner of its own (arm64 on an arm64 runner, no QEMU) and pushed by digest
-# (PUSH_OUTPUT of make push, its cache in PUSH_CACHE), then the platforms are merged into the image. A Makefile without
-# PUSH_OUTPUT gets one `make push` of all its platforms with QEMU. The tag <version>-<branch>-latest is moved to the image
+# (PUSH_OUTPUT of make push, its cache in PUSH_CACHE), then the platforms are merged into the image; a Makefile without
+# PUSH_OUTPUT is refused (CONVENTIONS.md#makefile). The tag <version>-<branch>-latest is moved to the image
 # only while the commit is still the head of the branch, so a slower run of an older commit does not take it back; the
 # merge and the copy are retried while ECR Public does not serve the pushed manifests yet (tests/docker_publish_test.sh).
 # The login uses the push role of README.md#the-push-to-publicecraws. The tag v1 is moved to a compatible change of this
@@ -55,7 +55,6 @@ jobs:
       latest: ${{ steps.tags.outputs.latest }}
       image: ${{ steps.tags.outputs.image }}
       platforms: ${{ steps.tags.outputs.platforms }}
-      by-digest: ${{ steps.tags.outputs.by-digest }}
       matrix: ${{ steps.tags.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
@@ -92,27 +91,19 @@ jobs:
             jq -cn --arg platform "$1" --arg name "$2" --arg runner "$runner" --argjson qemu "$qemu" \
               '{platform: $platform, name: $name, runner: $runner, qemu: $qemu}'
           }
-          # make push of a Makefile with PUSH_OUTPUT pushes one platform by digest, an older one all of them with QEMU
-          if make --no-print-directory -n push VERSION="$tag" IMAGE_REPO="$image_repo" PUSH_OUTPUT=--docker-publish 2> /dev/null \
+          # make push pushes one platform by digest with PUSH_OUTPUT
+          if ! make --no-print-directory -n push VERSION="$tag" IMAGE_REPO="$image_repo" PUSH_OUTPUT=--docker-publish 2> /dev/null \
             | grep -q -- '--docker-publish'; then
-            by_digest=true
-            matrix="$(for platform in ${platforms//,/ }; do entry "$platform" "${platform//\//-}"; done | jq -cs .)"
-          else
-            by_digest=false
-            echo "::notice file=Makefile,title=docker-publish::make push has no PUSH_OUTPUT: ${platforms} on one runner, QEMU (CONVENTIONS.md#makefile)"
-            if [[ "$platforms" == *,* ]]; then
-              matrix="$(jq -cn --arg platform "$platforms" '[{platform: $platform, name: "all", runner: "ubuntu-latest", qemu: true}]')"
-            else
-              matrix="[$(entry "$platforms" all)]"
-            fi
+            echo "::error file=Makefile,title=docker-publish::make push has no PUSH_OUTPUT, the build of a platform by digest (CONVENTIONS.md#makefile)"
+            exit 1
           fi
+          matrix="$(for platform in ${platforms//,/ }; do entry "$platform" "${platform//\//-}"; done | jq -cs .)"
           {
             echo "image-repo=${image_repo}"
             echo "tag=${tag}"
             echo "latest=${version}-${GITHUB_REF_NAME}-latest"
             echo "image=${image_repo}:${tag}"
             echo "platforms=${platforms}"
-            echo "by-digest=${by_digest}"
             echo "matrix=${matrix}"
           } >> "$GITHUB_OUTPUT"
 
@@ -155,19 +146,13 @@ jobs:
           AWS_SESSION_TOKEN: ${{ steps.aws.outputs.aws-session-token }}
       # the cache of GitHub Actions (type=gha of PUSH_CACHE) needs the runtime token of the runner in the environment
       - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
-        if: needs.prepare.outputs.by-digest == 'true'
       - name: Build and push the image (make push)
         env:
           IMAGE_REPO: ${{ needs.prepare.outputs.image-repo }}
           TAG: ${{ needs.prepare.outputs.tag }}
-          BY_DIGEST: ${{ needs.prepare.outputs.by-digest }}
           PLATFORM: ${{ matrix.platform }}
           NAME: ${{ matrix.name }}
         run: |
-          if [[ "$BY_DIGEST" != true ]]; then
-            make push VERSION="$TAG" IMAGE_REPO="$IMAGE_REPO"
-            exit 0
-          fi
           # the platform is pushed without a tag, the publish job merges the digests of the platforms into the image
           metadata="${RUNNER_TEMP}/metadata.json"
           make push VERSION="$TAG" IMAGE_REPO="$IMAGE_REPO" PLATFORMS="$PLATFORM" \
@@ -182,7 +167,6 @@ jobs:
           echo "$digest" > "${RUNNER_TEMP}/digests/${NAME}"
           echo "::notice title=docker-publish::${PLATFORM}: ${IMAGE_REPO}@${digest}"
       - uses: actions/upload-artifact@v7
-        if: needs.prepare.outputs.by-digest == 'true'
         with:
           name: docker-publish-digest-${{ matrix.name }}
           path: ${{ runner.temp }}/digests/${{ matrix.name }}
@@ -227,13 +211,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ steps.aws.outputs.aws-secret-access-key }}
           AWS_SESSION_TOKEN: ${{ steps.aws.outputs.aws-session-token }}
       - uses: actions/download-artifact@v8
-        if: needs.prepare.outputs.by-digest == 'true'
         with:
           pattern: docker-publish-digest-*
           path: ${{ runner.temp }}/digests
           merge-multiple: true
       - name: Merge the platforms into the image
-        if: needs.prepare.outputs.by-digest == 'true'
         env:
           IMAGE_REPO: ${{ needs.prepare.outputs.image-repo }}
           IMAGE: ${{ needs.prepare.outputs.image }}
