@@ -105,7 +105,6 @@ section "the platforms of a Makefile with PUSH_OUTPUT"
 project linux/amd64,linux/arm64
 out="$(tags)"
 check "the platforms" "linux/amd64,linux/arm64" "$(output platforms)"
-check "pushed by digest" "true" "$(output by-digest)"
 check "amd64 and arm64 on their runners, no QEMU" \
   '[{"platform":"linux/amd64","name":"linux-amd64","runner":"ubuntu-latest","qemu":false},{"platform":"linux/arm64","name":"linux-arm64","runner":"ubuntu-24.04-arm","qemu":false}]' \
   "$(output matrix)"
@@ -125,17 +124,12 @@ check "no PLATFORMS: the step fails" "1" "$?"
 check_contains "no PLATFORMS: the error" "::error file=Makefile,title=docker-publish::PLATFORMS of make push" "$out"
 check "no PLATFORMS: no outputs" "" "$(cat "${WORK}/output")"
 
-section "the platforms of a Makefile without PUSH_OUTPUT"
+section "a Makefile without PUSH_OUTPUT"
 project linux/amd64,linux/arm64 old
 out="$(tags)"
-check "the step succeeds" "0" "$?"
-check "not pushed by digest" "false" "$(output by-digest)"
-check "one make push of the platforms with QEMU" \
-  '[{"platform":"linux/amd64,linux/arm64","name":"all","runner":"ubuntu-latest","qemu":true}]' "$(output matrix)"
-check_contains "a notice" "::notice file=Makefile,title=docker-publish::make push has no PUSH_OUTPUT" "$out"
-project linux/amd64 old
-tags > /dev/null
-check "amd64 only: no QEMU" '[{"platform":"linux/amd64","name":"all","runner":"ubuntu-latest","qemu":false}]' "$(output matrix)"
+check "the step fails" "1" "$?"
+check_contains "the error" "::error file=Makefile,title=docker-publish::make push has no PUSH_OUTPUT" "$out"
+check "no outputs" "" "$(cat "${WORK}/output")"
 
 # make: records its arguments, writes the digest $DIGEST into the --metadata-file of PUSH_OUTPUT
 stub make "(IFS='|'; echo \"make|\$*\") >> '${WORK}/calls.log'
@@ -147,30 +141,25 @@ done"
 digest_a="sha256:$(printf 'a%.0s' {1..64})"
 digest_b="sha256:$(printf 'b%.0s' {1..64})"
 
-# push <by digest> <env...>: the step of make push of linux/arm64
+# push <env...>: the step of make push of linux/arm64
 push() {
   rm -rf "${WORK}/runner"
   mkdir -p "${WORK}/runner"
-  run push IMAGE_REPO=public.ecr.aws/zebrunner/x TAG=3.1-develop-abc1234 BY_DIGEST="$1" PLATFORM=linux/arm64 \
-    NAME=linux-arm64 "${@:2}"
+  run push IMAGE_REPO=public.ecr.aws/zebrunner/x TAG=3.1-develop-abc1234 PLATFORM=linux/arm64 NAME=linux-arm64 "$@"
 }
 
 section "make push of a platform"
-out="$(push true DIGEST="$digest_a")"
+out="$(push DIGEST="$digest_a")"
 check "the step succeeds" "0" "$?"
 check "make push of the platform, by digest, with its cache" \
   "push|VERSION=3.1-develop-abc1234|IMAGE_REPO=public.ecr.aws/zebrunner/x|PLATFORMS=linux/arm64|PUSH_OUTPUT=--output type=image,name=public.ecr.aws/zebrunner/x,push-by-digest=true,name-canonical=true,push=true --metadata-file ${WORK}/runner/metadata.json|PUSH_CACHE=--cache-from type=gha,scope=docker-publish-linux-arm64 --cache-to type=gha,mode=max,scope=docker-publish-linux-arm64,ignore-error=true" \
   "$(calls make)"
 check "the digest for the publish job" "$digest_a" "$(cat "${WORK}/runner/digests/linux-arm64" 2> /dev/null)"
 check_contains "the digest in a notice" "::notice title=docker-publish::linux/arm64: public.ecr.aws/zebrunner/x@${digest_a}" "$out"
-out="$(push true DIGEST=)"
+out="$(push DIGEST=)"
 check "no digest: the step fails" "1" "$?"
 check_contains "no digest: the error" "::error title=docker-publish::make push of linux/arm64 wrote no digest of the image" "$out"
 check "no digest: no file" "" "$(ls "${WORK}/runner/digests" 2> /dev/null)"
-out="$(push false)"
-check "without PUSH_OUTPUT: the step succeeds" "0" "$?"
-check "without PUSH_OUTPUT: make push of the Makefile" "push|VERSION=3.1-develop-abc1234|IMAGE_REPO=public.ecr.aws/zebrunner/x" \
-  "$(calls make)"
 
 # merge <failures> <platforms> <digests...>: the step of the merge with the digests of the platforms (linux-amd64,
 # linux-arm64 in this order)
