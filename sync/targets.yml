@@ -51,3 +51,5 @@ repos:
     groups: [all, host]
   zebrunner/mcloud-dummy:
     groups: [all]
+  zebrunner/mcloud-mdm:
+    groups: [all]
