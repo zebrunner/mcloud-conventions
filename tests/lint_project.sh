@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034
 # The settings and the checks of the project for tests/lint.sh (CONVENTIONS.md): mcloud-conventions.
 
-scripts=(tests/*.sh shared/util/*.sh)
+scripts=(tests/*.sh shared/util/*.sh shared/patch/*.sh)
 dockerfiles=()
 tools=(ruff)
 # this repository is the source of the shared files
