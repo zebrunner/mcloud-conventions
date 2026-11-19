@@ -77,6 +77,9 @@ b" "$(ui 'ui_wrap "$(printf "a\nb")" 20')"
 check "an empty line stays" "a
 
 b" "$(ui 'ui_wrap "$(printf "a\n\nb")" 20')"
+check "a line within the width keeps its spaces" "connector  created  57fe4efc5e5b" \
+  "$(ui 'ui_wrap "connector  created  57fe4efc5e5b" 40')"
+check "the aligned columns of a status stay" "   ok   connector  created" "$(ui 'ui_ok "connector  created"')"
 check "no glob is expanded" "* ok" "$(cd "$WORK" && touch x && ui 'ui_wrap "* ok" 20')"
 check "Unicode is counted by characters" "$(printf '\xe2\x94\x81%.0s' 1 2 3) a
 b" "$(ui 'ui_wrap "$(printf "\xe2\x94\x81%.0s" 1 2 3) a b" 5')"
