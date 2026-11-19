@@ -31,6 +31,7 @@ groups:
     files:
       - shared/patch/curve_keygen.py: patch/curve_keygen.py
       - shared/patch/ui.sh: patch/ui.sh
+      - shared/patch/completion.sh: patch/completion.sh
 
 repos:
   zebrunner/appium:
