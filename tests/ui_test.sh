@@ -6,7 +6,7 @@
 source "$(dirname "$0")/lib.sh"
 cd "$REPO" || exit 1
 
-UI_SH=shared/patch/ui.sh
+UI_SH="${REPO}/shared/patch/ui.sh"
 export UI_SH
 ESC=$'\033'
 
@@ -66,7 +66,23 @@ check "the width of a narrow terminal" "56" "$(ui 'echo "$UI_WIDTH"' COLUMNS=60)
 check "at least 40" "40" "$(ui 'echo "$UI_WIDTH"' COLUMNS=20)"
 check "the heavy line is the width" "  $(printf '%76s' '' | tr ' ' '=')" "$(ui 'ui_banner X | tail -1' LANG=C)"
 
+section "wrap"
+check "the text is wrapped at the spaces" "aaa bbb
+ccc" "$(ui 'ui_wrap "aaa bbb ccc" 8')"
+check "a longer word stays whole on its own line" "see
+/a/very/long/path/of/a/file.conf
+now" "$(ui 'ui_wrap "see /a/very/long/path/of/a/file.conf now" 10')"
+check "the lines of the text stay lines" "a
+b" "$(ui 'ui_wrap "$(printf "a\nb")" 20')"
+check "an empty line stays" "a
+
+b" "$(ui 'ui_wrap "$(printf "a\n\nb")" 20')"
+check "no glob is expanded" "* ok" "$(cd "$WORK" && touch x && ui 'ui_wrap "* ok" 20')"
+check "Unicode is counted by characters" "$(printf '\xe2\x94\x81%.0s' 1 2 3) a
+b" "$(ui 'ui_wrap "$(printf "\xe2\x94\x81%.0s" 1 2 3) a b" 5')"
+
 section "banner and sections"
+check "a banner without a version has no trailing spaces" "[ ZEBRUNNER ] MCloud" "$(ui 'ui_banner MCloud' | sed -n 's/^  //; 2p')"
 banner="$(ui 'ui_banner "MCloud Agent" "v3.2.0"')"
 check_contains "the badge and the product" "[ ZEBRUNNER ] MCloud Agent" "$banner"
 check "the version at the right" "78 v3.2.0" "$(sed -n 2p <<< "$banner" | awk '{ print length($0), $NF }')"
@@ -75,6 +91,8 @@ check "the colored badge" "${ESC}[48;5;148m${ESC}[38;5;232m${ESC}[1m ZEBRUNNER $
 section_line="$(ui 'ui_section "Doctor host" "2/3"' LANG=C | sed -n 2p)"
 check_contains "the title of a section in upper case" "[ DOCTOR HOST ] " "$section_line"
 check "the counter of a section at the right" "78 2/3" "$(awk '{ print length($0), $NF }' <<< "$section_line")"
+check "the detail of a section is under it" "  /opt/mcloud" "$(ui 'ui_section Setup "" /opt/mcloud' | sed -n 4p)"
+check "an empty line after the detail" "5" "$(ui 'ui_section Setup "" /opt/mcloud' | awk 'END { print NR }')"
 check "a section without a counter is the width too" "78" "$(ui 'ui_section Setup' LANG=C | awk 'NR == 2 { print length($0) }')"
 
 section "statuses"
@@ -85,6 +103,15 @@ check "warn and its fix" "$(printf '   warn old\n     %s fix brew upgrade' "$bra
 check "fail and its fix in ASCII" "   FAIL down
      \`- fix start it" "$(ui 'ui_fail down "start it"' LANG=C)"
 check "a colored dot" "   ${ESC}[38;5;78m"$'\xe2\x97\x8f'"${ESC}[0m up" "$(ui 'ui_ok up' UI_COLOR=always)"
+long_message="The node lab-1 is not reachable at 10.0.0.5 from the server: check the firewall of the node and /etc/hosts"
+status="$(env LANG=C bash -c '. "$UI_SH"; ui_warn "$1" "$2"' _ "$long_message" "sudo ufw allow from 10.0.0.2 to any port 7400:7700 proto tcp comment mcloud")"
+check "a long status is wrapped under itself" "   warn The node lab-1 is not reachable at 10.0.0.5 from the server: check the
+        firewall of the node and /etc/hosts
+     \`- fix sudo ufw allow from 10.0.0.2 to any port 7400:7700 proto tcp
+            comment mcloud" "$status"
+check "a long status is the width" "true" "$([[ "$(max_width "$status")" -le 78 ]] && echo true || echo false)"
+check "a colored status is wrapped after the dot" "     firewall of the node and /etc/hosts" \
+  "$(env LANG=C UI_COLOR=always bash -c '. "$UI_SH"; ui_fail "$1"' _ "$long_message" | sed -n 2p)"
 
 section "callout"
 long="STF_TOKEN of variables.env is empty: the grid reserves no device. Sign in to https://mcloud.example.com/stf, generate an access token (Settings, Keys), set it as STF_TOKEN of variables.env and run ./zebrunner.sh restart."
@@ -92,6 +119,10 @@ callout="$(env LANG=C bash -c '. "$UI_SH"; ui_callout warn "$1"' _ "$long" | sed
 check "the title of a warning" "  | WARNING" "$(head -1 <<< "$callout")"
 check "the text is wrapped to the width" "true" "$([[ "$(max_width "$callout")" -le 78 ]] && echo true || echo false)"
 check_contains "the text is kept" "| restart." "$callout"
+check "no second empty line after a section" "[ SETUP ] |~~| WARNING~" \
+  "$(ui 'ui_section Setup; ui_callout warn x' LANG=C | sed -E 's/^  //; s/ -+$/ |/' | sed -n 2,4p | tr '\n' '~')"
+check "an empty line before a callout after a status" "
+  | WARNING" "$(ui 'ui_ok a; ui_callout warn x' LANG=C | sed -n 2,3p)"
 check "the title of an error" "  | ERROR" "$(ui 'ui_callout error x' LANG=C | sed -n 2p)"
 check "a title of its own" "  | NOTE: MDM" "$(ui 'ui_callout note x "NOTE: MDM"' LANG=C | sed -n 2p)"
 
@@ -104,6 +135,17 @@ check "long arguments: the description on the next line" "   ansible [devices] [
 check "the description is aligned" "" "$(sed 1d <<< "$help" | grep -v '^                                   [^ ]')"
 check "the help is the width" "true" "$([[ "$(max_width "$help")" -le 78 ]] && echo true || echo false)"
 check "the group of the help" "[ SET UP ]" "$(ui 'ui_help_group "Set up"' | sed -n 's/^  //p')"
+
+section "paragraph, steps and tables"
+check "a paragraph is wrapped to the width, an empty line after it" "  word word word word word word word word
+  word word word word
+
+|" "$(ui 'ui_paragraph "word word word word word word word word word word word word"; echo "|"' COLUMNS=44)"
+check "a step is numbered and wrapped under itself" "   1. Sign in to STF and generate an access token in Settings, Keys, then set
+      it as STF_TOKEN" "$(ui 'ui_step 1 "Sign in to STF and generate an access token in Settings, Keys, then set it as STF_TOKEN"' | head -2)"
+check "a step of two digits" "   10. x" "$(ui 'ui_step 10 x' | head -1)"
+check "the header of a table is the same text without colors" "LABEL   ADDRESS" "$(ui 'ui_table_head "LABEL   ADDRESS"')"
+check "the header of a table is muted" "${ESC}[38;5;244mLABEL${ESC}[0m" "$(ui 'ui_table_head LABEL' UI_COLOR=always)"
 
 section "summary"
 check "the counts without colors" "  1 ok, 2 warn, 3 fail" "$(ui 'ui_summary 1 2 3' | tail -1)"
